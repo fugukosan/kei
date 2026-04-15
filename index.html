@@ -18,7 +18,6 @@
         .log-text { white-space: pre-wrap; line-height: 1.5; word-break: break-all; }
         .del-btn { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #666; font-size: 18px; cursor: pointer; padding: 5px; }
         
-        /* 装飾タグ用スタイル */
         large { font-size: 1.3em; font-weight: bold; }
         small { font-size: 0.8em; color: #ccc; }
         b { font-weight: bold; }
@@ -49,6 +48,13 @@
         .mini-icon { position: relative; width: 45px; height: 45px; }
         .mini-icon img { width: 100%; height: 100%; border-radius: 4px; object-fit: cover; }
         .mini-del { position: absolute; top: -5px; right: -5px; background: #ff4f4f; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 12px; display: flex; align-items: center; justify-content: center; border: none; }
+        
+        /* 折り畳み用スタイル */
+        details { background: #2c2f33; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+        summary { padding: 12px; cursor: pointer; font-weight: bold; background: #3a3f44; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+        summary::-webkit-details-marker { display: none; }
+        summary::after { content: '▼'; font-size: 12px; color: #888; }
+        details[open] summary::after { content: '▲'; }
     </style>
 </head>
 <body>
@@ -80,27 +86,28 @@
     </div>
 
     <div id="config-screen" class="screen">
-        <h3>キャラクター管理</h3>
-        <div class="field"><label>名前</label><input type="text" id="c-name"></div>
-        <div class="field"><label>アイコンURL（改行区切り）</label><textarea id="c-urls" style="height:100px;" placeholder="https://..."></textarea></div>
-        <button onclick="saveChar()" style="width:100%; padding:12px; background:#7f7fff; color:white; border:none; border-radius:4px; font-weight:bold;">登録・更新</button>
-        
-        <hr style="margin:20px 0; border:0; border-top:1px solid #444;">
-        
-        <div id="char-list-ui"></div>
-
-        <h3 style="font-size: 16px; margin-top: 20px;">データ保存・読み込み</h3>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h3 style="font-size: 18px; margin-top: 0;">データ保存・読み込み</h3>
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
             <div style="display: flex; gap: 4px;">
                 <button onclick="exportToFile('all')" style="background: #4a4a4a; flex: 1; padding: 10px; font-size: 13px; color: white; border: none; border-radius: 4px;">全ログ保存</button>
                 <button onclick="exportToFile('today')" style="background: #4a4a4a; flex: 1; padding: 10px; font-size: 13px; color: white; border: none; border-radius: 4px;">今日のみ保存</button>
             </div>
             <button onclick="document.getElementById('importFile').click()" style="background: #7f7fff; width:100%; padding: 10px; font-size: 14px; color: white; border: none; border-radius: 4px;">JSONファイルを読み込む</button>
+            <button onclick="toggleScreen('backup-screen')" style="width:100%; padding:10px; background:#333; color:#fff; border:1px solid #555; border-radius:4px;">テキストコピペ画面へ</button>
         </div>
         <input type="file" id="importFile" style="display:none" onchange="importFromFile(this)" accept=".json">
+
+        <hr style="margin:20px 0; border:0; border-top:1px solid #444;">
+
+        <h3>キャラクター新規登録・更新</h3>
+        <div class="field"><label>名前</label><input type="text" id="c-name"></div>
+        <div class="field"><label>アイコンURL（改行区切り）</label><textarea id="c-urls" style="height:100px;" placeholder="https://..."></textarea></div>
+        <button onclick="saveChar()" style="width:100%; padding:12px; background:#7f7fff; color:white; border:none; border-radius:4px; font-weight:bold;">登録・更新</button>
         
-        <button onclick="toggleScreen('backup-screen')" style="width:100%; padding:10px; background:#333; color:#fff; border:1px solid #555; border-radius:4px; margin-top:10px;">テキストコピペ画面へ</button>
-        <button onclick="toggleScreen('')" style="width:100%; padding:10px; background:#555; color:white; border:none; border-radius:4px; margin-top:10px;">戻る</button>
+        <h3 style="margin-top: 25px;">登録済みキャラ一覧</h3>
+        <div id="char-list-ui"></div>
+
+        <button onclick="toggleScreen('')" style="width:100%; padding:12px; background:#555; color:white; border:none; border-radius:4px; margin-top:20px; font-weight:bold;">閉じる</button>
     </div>
 
     <div id="backup-screen" class="screen">
@@ -114,7 +121,6 @@
     </div>
 
     <script>
-        // データ初期化
         let chars = JSON.parse(localStorage.getItem('vkk_chars') || '{}');
         let currentName = ''; 
         let currentImg = '';
@@ -138,15 +144,12 @@
             if(show) buildIconGrid();
         }
 
-        // キャラクター登録・更新
         function saveChar() {
             const n = document.getElementById('c-name').value.trim();
             const u = document.getElementById('c-urls').value.split('\n').filter(x => x.trim());
             if(!n || !u.length) return alert('名前とURLを入力してください');
-
             if (!chars[n]) chars[n] = [];
             chars[n] = Array.from(new Set([...chars[n], ...u]));
-
             localStorage.setItem('vkk_chars', JSON.stringify(chars));
             alert(n + ' を更新しました');
             document.getElementById('c-name').value = '';
@@ -188,14 +191,12 @@
             });
         }
 
-        // 投稿
         function post() {
             const val = document.getElementById('text-in').value.trim();
             if(!val || !currentName) return;
             const now = new Date();
             const time = `${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}`;
-            const dateStr = now.toISOString().split('T')[0]; // 2026-04-09
-            
+            const dateStr = now.toISOString().split('T')[0];
             const data = { n: currentName, i: currentImg, t: time, d: dateStr, b: val };
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             logs.push(data);
@@ -223,21 +224,22 @@
 
         function deleteLog(i) { if(confirm('このログを削除しますか？')){ let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]'); logs.splice(i,1); localStorage.setItem('vkk_logs', JSON.stringify(logs)); renderAllLogs(); } }
 
-        // --- 管理画面用：キャラ別アイコンリスト表示と個別削除 ---
         function buildManageList() {
             const area = document.getElementById('char-list-ui'); if(!area) return;
             area.innerHTML = '';
             Object.keys(chars).forEach(name => {
-                const card = document.createElement('div');
-                card.className = 'manage-card';
-                card.innerHTML = `<div style="display:flex; justify-content:space-between;">
-                    <strong>${name}</strong>
-                    <button onclick="delChar('${name}')" style="color:#ff4f4f; background:none; border:none; font-size:12px;">キャラごと削除</button>
-                </div>`;
+                const details = document.createElement('details');
+                details.innerHTML = `
+                    <summary>
+                        <span>${name} (${chars[name].length})</span>
+                        <button onclick="delChar(event, '${name}')" style="color:#ff4f4f; background:none; border:none; font-size:12px; margin-right:10px;">削除</button>
+                    </summary>
+                    <div style="padding:10px; background:#222;">
+                        <div class="manage-icons"></div>
+                    </div>
+                `;
                 
-                const iconContainer = document.createElement('div');
-                iconContainer.className = 'manage-icons';
-                
+                const iconContainer = details.querySelector('.manage-icons');
                 chars[name].forEach((url, idx) => {
                     const iconBox = document.createElement('div');
                     iconBox.className = 'mini-icon';
@@ -248,8 +250,7 @@
                     iconContainer.appendChild(iconBox);
                 });
                 
-                card.appendChild(iconContainer);
-                area.appendChild(card);
+                area.appendChild(details);
             });
         }
 
@@ -263,19 +264,24 @@
             }
         }
 
-        function delChar(n) { if(confirm(n + ' を削除しますか？全アイコンが消えます。')){ delete chars[n]; localStorage.setItem('vkk_chars', JSON.stringify(chars)); buildManageList(); buildTabs(); } }
+        function delChar(event, n) {
+            event.stopPropagation();
+            if(confirm(n + ' を削除しますか？全アイコンが消えます。')){
+                delete chars[n];
+                localStorage.setItem('vkk_chars', JSON.stringify(chars));
+                buildManageList();
+                buildTabs();
+            }
+        }
 
-        // --- データ共有（ファイル保存・期間指定） ---
         function exportToFile(mode) {
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             let filename = 'vkk_archive_all.json';
-            
             if(mode === 'today') {
                 const today = new Date().toISOString().split('T')[0];
                 logs = logs.filter(l => l.d === today);
                 filename = 'vkk_archive_today.json';
             }
-
             const data = { logs: logs, chars: chars };
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
             const url = URL.createObjectURL(blob);
@@ -303,7 +309,6 @@
             reader.readAsText(file);
         }
 
-        // --- テキストエリア管理 ---
         function exportToTextarea() {
             const data = { logs: JSON.parse(localStorage.getItem('vkk_logs') || '[]'), chars: chars };
             document.getElementById('backup-data').value = JSON.stringify(data, null, 2);
@@ -321,7 +326,6 @@
             } catch (err) { alert('形式エラーです'); }
         }
 
-        // --- タグ機能 ---
         function tag(s) {
             const el = document.getElementById('text-in');
             const start = el.selectionStart;
