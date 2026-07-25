@@ -237,12 +237,10 @@
             });
         }
 
-        // 投稿処理（自動リンク化 ＆ 画像自動判定 ＆ 任意時間対応）
         function post() {
             const val = document.getElementById('text-in').value.trim();
             if(!val || !currentName) return;
 
-            // 投稿時間の設定（入力がなければ現在時刻）
             let timeStr = document.getElementById('custom-time').value.trim();
             if(!timeStr) {
                 const now = new Date();
@@ -251,23 +249,15 @@
 
             const todayStr = new Date().toISOString().split('T')[0];
 
-            // テキスト内に画像URL（http〜で終わりが画像拡張子か、あるいは通常のURL）が含まれているか、またはテキスト自体が画像URLか判定
-            // ここでは簡易的に、テキストが「http」で始まり、末尾が画像っぽいか、あるいはテキスト内に画像URLが含まれている場合を抽出
             let textContent = val;
             let imageUrl = '';
-
-            // 入力されたテキストがそのまま画像URL（httpsから始まり、jpg/png/webp等で終わるか、または特定の画像ストレージURL）の場合
             const urlRegex = /(https?:\/\/[^\s]+)/g;
             const matches = val.match(urlRegex);
             
-            // もし入力全体の大部分がURL、あるいは改行等で分けられていてURLが含まれている場合、画像として扱う処理
-            // ここでは「メッセージ内に画像URLが貼られたら、それを画像として下に表示し、テキストからはURL部分を除外する」仕様にします
             if (matches) {
-                // 画像拡張子っぽいものを含むURLを画像として優先抽出
                 const imgMatch = matches.find(url => /\.(jpg|jpeg|png|webp|gif)(?:[?#]|$)/i.test(url) || url.includes('picture.php'));
                 if (imgMatch) {
                     imageUrl = imgMatch;
-                    // テキストから該当の画像URLを削除してすっきりさせる
                     textContent = val.replace(imgMatch, '').trim();
                 }
             }
@@ -286,7 +276,6 @@
             localStorage.setItem('vkk_logs', JSON.stringify(logs));
             renderAllLogs();
             
-            // 入力欄をクリア
             document.getElementById('text-in').value = '';
             document.getElementById('custom-time').value = '';
             window.scrollTo(0, document.body.scrollHeight);
@@ -296,7 +285,6 @@
             const area = document.getElementById('logs'); area.innerHTML = '';
             const logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             logs.forEach((d, index) => {
-                // 画像データがあればimgタグを生成する
                 let imageHtml = d.img ? `<img src="${d.img}" class="log-image">` : '';
 
                 const html = `<div class="log-item">
@@ -411,7 +399,7 @@
                 const data = JSON.parse(jsonText);
                 if (confirm('上書きする？')) {
                     localStorage.setItem('vkk_logs', JSON.stringify(data.logs || []));
-                    localStorage.setItem('vkk_chars', JSON.stringify(data.chars || {}`)));
+                    localStorage.setItem('vkk_chars', JSON.stringify(data.chars || {}));
                     if(data.settings) localStorage.setItem('vkk_settings', JSON.stringify(data.settings));
                     location.reload();
                 }
@@ -423,7 +411,7 @@
             const start = el.selectionStart;
             const end = el.selectionEnd;
             const txt = el.value;
-            el.value = txt.subtitle ? ... : txt.substring(0, start) + `<${s}>` + txt.substring(start, end) + `</${s}>` + txt.substring(end);
+            el.value = txt.substring(0, start) + `<${s}>` + txt.substring(start, end) + `</${s}>` + txt.substring(end);
             el.focus();
         }
         function tagRuby() {
