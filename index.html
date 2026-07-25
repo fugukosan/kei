@@ -16,6 +16,7 @@
         .log-header { font-weight: bold; border-bottom: 1px solid #444; margin-bottom: 5px; padding-bottom: 3px; display: flex; justify-content: space-between; align-items: center; }
         .log-time { font-size: 0.75em; color: #888; font-weight: normal; margin-right: 25px; }
         .log-text { white-space: pre-wrap; line-height: 1.5; word-break: break-all; }
+        .log-image { margin-top: 10px; max-width: 100%; max-height: 300px; border-radius: 6px; display: block; object-fit: contain; }
         .del-btn { position: absolute; top: 8px; right: 8px; background: none; border: none; color: #666; font-size: 18px; cursor: pointer; padding: 5px; }
         
         large { font-size: 1.3em; font-weight: bold; }
@@ -30,6 +31,10 @@
         .tab-scroll { display: flex; gap: 5px; overflow-x: auto; flex: 1; }
         .tab-item { background: #444; border: none; color: white; padding: 6px 12px; border-radius: 4px; white-space: nowrap; }
         .tab-item.on { background: #7f7fff; }
+        
+        .time-setting-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: #aaa; }
+        .time-setting-row input { background: #333; color: white; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 80px; }
+
         textarea { width: 100%; height: 70px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 16px; }
         .btn-row { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
         .btn-row button { flex: 1; min-width: 40px; padding: 8px 2px; border: none; border-radius: 4px; background: #444; color: white; font-size: 12px; }
@@ -67,7 +72,14 @@
             <div class="tab-scroll" id="tabs"></div>
             <button onclick="toggleScreen('config-screen')" style="background:none; border:1px solid #777; color:#ccc; border-radius:4px; padding:5px;">⚙️</button>
         </div>
-        <textarea id="text-in" placeholder="メッセージを入力"></textarea>
+        
+        <div class="time-setting-row">
+            <span>投稿時間:</span>
+            <input type="text" id="custom-time" placeholder="例: 21:48">
+            <span style="font-size: 10px; color: #777;">（空欄なら現在時刻）</span>
+        </div>
+
+        <textarea id="text-in" placeholder="メッセージを入力（画像URLを貼ると画像も出せるよ）"></textarea>
         <div class="btn-row">
             <button onclick="tag('large')">L</button>
             <button onclick="tag('small')">S</button>
@@ -140,7 +152,6 @@
             renderAllLogs(); 
         };
 
-        // サイト設定の適用
         function applySiteSettings() {
             document.getElementById('site-title').innerText = settings.title;
             document.getElementById('setting-title').value = settings.title;
@@ -149,7 +160,6 @@
             document.getElementById('app-title-meta').content = settings.title;
         }
 
-        // サイト設定の保存
         function saveSiteSettings() {
             settings.title = document.getElementById('setting-title').value.trim() || '陰府怪奇譚';
             settings.icon = document.getElementById('setting-icon').value.trim();
@@ -158,7 +168,6 @@
             alert('設定を保存したで…………');
         }
 
-        // 全投稿一括削除
         function clearAllLogs() {
             if(confirm('今までの投稿を全部消してもええの？\n（この操作は取り消せへんよ）')) {
                 localStorage.setItem('vkk_logs', '[]');
@@ -228,18 +237,58 @@
             });
         }
 
+        // 投稿処理（自動リンク化 ＆ 画像自動判定 ＆ 任意時間対応）
         function post() {
             const val = document.getElementById('text-in').value.trim();
             if(!val || !currentName) return;
-            const now = new Date();
-            const time = `${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}`;
-            const dateStr = now.toISOString().split('T')[0];
-            const data = { n: currentName, i: currentImg, t: time, d: dateStr, b: val };
+
+            // 投稿時間の設定（入力がなければ現在時刻）
+            let timeStr = document.getElementById('custom-time').value.trim();
+            if(!timeStr) {
+                const now = new Date();
+                timeStr = `${now.getHours()}:${now.getMinutes().toString().padStart(2,'0')}`;
+            }
+
+            const todayStr = new Date().toISOString().split('T')[0];
+
+            // テキスト内に画像URL（http〜で終わりが画像拡張子か、あるいは通常のURL）が含まれているか、またはテキスト自体が画像URLか判定
+            // ここでは簡易的に、テキストが「http」で始まり、末尾が画像っぽいか、あるいはテキスト内に画像URLが含まれている場合を抽出
+            let textContent = val;
+            let imageUrl = '';
+
+            // 入力されたテキストがそのまま画像URL（httpsから始まり、jpg/png/webp等で終わるか、または特定の画像ストレージURL）の場合
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const matches = val.match(urlRegex);
+            
+            // もし入力全体の大部分がURL、あるいは改行等で分けられていてURLが含まれている場合、画像として扱う処理
+            // ここでは「メッセージ内に画像URLが貼られたら、それを画像として下に表示し、テキストからはURL部分を除外する」仕様にします
+            if (matches) {
+                // 画像拡張子っぽいものを含むURLを画像として優先抽出
+                const imgMatch = matches.find(url => /\.(jpg|jpeg|png|webp|gif)(?:[?#]|$)/i.test(url) || url.includes('picture.php'));
+                if (imgMatch) {
+                    imageUrl = imgMatch;
+                    // テキストから該当の画像URLを削除してすっきりさせる
+                    textContent = val.replace(imgMatch, '').trim();
+                }
+            }
+
+            const data = { 
+                n: currentName, 
+                i: currentImg, 
+                t: timeStr, 
+                d: todayStr, 
+                b: textContent,
+                img: imageUrl 
+            };
+
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             logs.push(data);
             localStorage.setItem('vkk_logs', JSON.stringify(logs));
             renderAllLogs();
+            
+            // 入力欄をクリア
             document.getElementById('text-in').value = '';
+            document.getElementById('custom-time').value = '';
             window.scrollTo(0, document.body.scrollHeight);
         }
 
@@ -247,12 +296,16 @@
             const area = document.getElementById('logs'); area.innerHTML = '';
             const logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             logs.forEach((d, index) => {
+                // 画像データがあればimgタグを生成する
+                let imageHtml = d.img ? `<img src="${d.img}" class="log-image">` : '';
+
                 const html = `<div class="log-item">
                     <button class="del-btn" onclick="deleteLog(${index})">×</button>
                     <div class="log-icon"><img src="${d.i}"></div>
                     <div class="log-content">
                         <div class="log-header"><span>${d.n}</span><span class="log-time">${d.t}</span></div>
                         <div class="log-text">${d.b}</div>
+                        ${imageHtml}
                     </div>
                 </div>`;
                 area.insertAdjacentHTML('beforeend', html);
@@ -358,7 +411,7 @@
                 const data = JSON.parse(jsonText);
                 if (confirm('上書きする？')) {
                     localStorage.setItem('vkk_logs', JSON.stringify(data.logs || []));
-                    localStorage.setItem('vkk_chars', JSON.stringify(data.chars || {}));
+                    localStorage.setItem('vkk_chars', JSON.stringify(data.chars || {}`)));
                     if(data.settings) localStorage.setItem('vkk_settings', JSON.stringify(data.settings));
                     location.reload();
                 }
@@ -370,7 +423,7 @@
             const start = el.selectionStart;
             const end = el.selectionEnd;
             const txt = el.value;
-            el.value = txt.substring(0, start) + `<${s}>` + txt.substring(start, end) + `</${s}>` + txt.substring(end);
+            el.value = txt.subtitle ? ... : txt.substring(0, start) + `<${s}>` + txt.substring(start, end) + `</${s}>` + txt.substring(end);
             el.focus();
         }
         function tagRuby() {
