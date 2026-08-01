@@ -379,7 +379,7 @@
             } 
         }
 
-        // --- Canvasを使った簡易スクショ保存機能 ---
+        // --- Canvasを使った簡易スクショ保存機能（CORS・画像描画修正版） ---
         async function saveCurrentPageAsImage() {
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             const startIndex = (currentPage - 1) * itemsPerPage;
@@ -391,28 +391,23 @@
             const width = 800;
             canvas.width = width;
             
-            // 一旦仮の高さで背景を塗り、アイテムを描画しながら高さを計算する
-            // 簡易的にアイコン(84px)＋パディング等を考慮して高さを算出
             let padding = 20;
             let itemHeights = [];
             
-            // フォント設定
             ctx.font = '16px sans-serif';
             
             targetLogs.forEach(d => {
-                // テキストの行数を簡易計算（文字折り返し考慮）
-                const maxWidth = width - 150; // アイコンやパディング分を引く
+                const maxWidth = width - 150; 
                 const lines = wrapText(ctx, d.b, maxWidth);
-                let h = 24 + (lines.length * 24) + 30; // ヘッダー + テキスト行 + 余白
-                if(d.img) h += 180; // 画像がある場合の仮高さ
-                if(h < 110) h = 110; // 最小高さ
+                let h = 24 + (lines.length * 24) + 30; 
+                if(d.img) h += 220; // 投稿画像がある場合の高さ追加
+                if(h < 110) h = 110; 
                 itemHeights.push({ h: h, lines: lines, data: d });
-                padding += h + 12; // マージン分
+                padding += h + 12; 
             });
 
             canvas.height = padding + 20;
 
-            // 背景描画
             ctx.fillStyle = '#1a1c1e';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -426,11 +421,10 @@
                 ctx.fillStyle = '#2c2f33';
                 roundRect(ctx, 20, currentY, width - 40, h, 8, true, false);
 
-                // アイコン読込と描画
+                // アイコン描画（失敗しても止まらないようにtry-catch）
                 try {
                     await drawImageToCanvas(ctx, d.i, 32, currentY + 12, 84, 84, 6);
                 } catch(e) {
-                    // 読み込み失敗時は四角形
                     ctx.fillStyle = '#444';
                     ctx.fillRect(32, currentY + 12, 84, 84);
                 }
@@ -460,18 +454,32 @@
                 let textY = currentY + 68;
                 for(let line of item.lines) {
                     ctx.fillText(line, 128, textY);
-                    ctx.textBaseline = 'alphabetic';
                     textY += 24;
+                }
+
+                // 投稿画像がある場合の描画
+                if(d.img) {
+                    try {
+                        await drawImageToCanvas(ctx, d.img, 128, textY + 5, width - 168, 200, 6);
+                    } catch(e) {
+                        // 描画失敗時は枠だけ表示
+                        ctx.fillStyle = '#444';
+                        ctx.fillRect(128, textY + 5, width - 168, 200);
+                    }
                 }
 
                 currentY += h + 12;
             }
 
             // 画像としてダウンロード
-            const link = document.createElement('a');
-            link.download = `vkk_log_page${currentPage}.png`;
-            link.href = canvas.toDataURL('image/png');
-            link.click();
+            try {
+                const link = document.createElement('a');
+                link.download = `vkk_log_page${currentPage}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch(err) {
+                alert('画像のセキュリティ制限（CORS）によりスクショが保存できませんでした。一部の外部画像が原因の可能性があります。');
+            }
         }
 
         // テキスト折り返し用ヘルパー
@@ -512,9 +520,9 @@
             if (stroke) ctx.stroke();
         }
 
-        // アイコン画像描画用ヘルパー（CORS対策含む）
+        // アイコン・画像描画用ヘルパー（CORSエラー安全対策版）
         function drawImageToCanvas(ctx, src, x, y, w, h, radius) {
-            return new Promise((resolve, reject) => {
+            return new Promise((resolve) => {
                 const img = new Image();
                 img.crossOrigin = 'anonymous';
                 img.onload = () => {
@@ -535,7 +543,10 @@
                     ctx.restore();
                     resolve();
                 };
-                img.onerror = reject;
+                img.onerror = () => {
+                    // 読み込みに失敗しても処理を止めずに続行する
+                    resolve();
+                };
                 img.src = src;
             });
         }
