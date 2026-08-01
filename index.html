@@ -379,7 +379,7 @@
             } 
         }
 
-        // --- Canvasを使った簡易スクショ保存機能（CORS・画像描画修正版） ---
+        // --- Canvasを使ったスクショ表示・保存機能（プレビュー長押し保存方式） ---
         async function saveCurrentPageAsImage() {
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             const startIndex = (currentPage - 1) * itemsPerPage;
@@ -400,7 +400,7 @@
                 const maxWidth = width - 150; 
                 const lines = wrapText(ctx, d.b, maxWidth);
                 let h = 24 + (lines.length * 24) + 30; 
-                if(d.img) h += 220; // 投稿画像がある場合の高さ追加
+                if(d.img) h += 220; 
                 if(h < 110) h = 110; 
                 itemHeights.push({ h: h, lines: lines, data: d });
                 padding += h + 12; 
@@ -417,11 +417,9 @@
                 let d = item.data;
                 let h = item.h;
 
-                // ログ項目の背景カード
                 ctx.fillStyle = '#2c2f33';
                 roundRect(ctx, 20, currentY, width - 40, h, 8, true, false);
 
-                // アイコン描画（失敗しても止まらないようにtry-catch）
                 try {
                     await drawImageToCanvas(ctx, d.i, 32, currentY + 12, 84, 84, 6);
                 } catch(e) {
@@ -429,7 +427,6 @@
                     ctx.fillRect(32, currentY + 12, 84, 84);
                 }
 
-                // ヘッダー（名前と時間）
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 16px sans-serif';
                 ctx.fillText(d.n, 128, currentY + 30);
@@ -440,7 +437,6 @@
                 ctx.fillText(d.t, width - 40, currentY + 30);
                 ctx.textAlign = 'left';
 
-                // ヘッダーの区切り線
                 ctx.strokeStyle = '#444444';
                 ctx.lineWidth = 1;
                 ctx.beginPath();
@@ -448,7 +444,6 @@
                 ctx.lineTo(width - 40, currentY + 42);
                 ctx.stroke();
 
-                // テキスト描画
                 ctx.fillStyle = '#ffffff';
                 ctx.font = '16px sans-serif';
                 let textY = currentY + 68;
@@ -457,12 +452,10 @@
                     textY += 24;
                 }
 
-                // 投稿画像がある場合の描画
                 if(d.img) {
                     try {
                         await drawImageToCanvas(ctx, d.img, 128, textY + 5, width - 168, 200, 6);
                     } catch(e) {
-                        // 描画失敗時は枠だけ表示
                         ctx.fillStyle = '#444';
                         ctx.fillRect(128, textY + 5, width - 168, 200);
                     }
@@ -471,14 +464,27 @@
                 currentY += h + 12;
             }
 
-            // 画像としてダウンロード
             try {
-                const link = document.createElement('a');
-                link.download = `vkk_log_page${currentPage}.png`;
-                link.href = canvas.toDataURL('image/png');
-                link.click();
+                const dataUrl = canvas.toDataURL('image/png');
+                
+                let oldModal = document.getElementById('screenshot-modal');
+                if(oldModal) oldModal.remove();
+
+                const previewModal = document.createElement('div');
+                previewModal.id = 'screenshot-modal';
+                previewModal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;';
+                
+                previewModal.innerHTML = `
+                    <div style="color:white; margin-bottom:10px; font-size:14px; text-align:center;">
+                        画像を長押しして「写真に追加」または「保存」してな！
+                    </div>
+                    <img src="${dataUrl}" style="max-width:100%; max-height:75vh; border-radius:8px; object-fit:contain; border:1px solid #555;">
+                    <button onclick="document.getElementById('screenshot-modal').remove()" style="margin-top:15px; background:#ff4f4f; color:white; border:none; padding:10px 20px; border-radius:4px; font-weight:bold;">閉じる</button>
+                `;
+                document.body.appendChild(previewModal);
+
             } catch(err) {
-                alert('画像のセキュリティ制限（CORS）によりスクショが保存できませんでした。一部の外部画像が原因の可能性があります。');
+                alert('画像生成に失敗したわ……。');
             }
         }
 
@@ -520,7 +526,7 @@
             if (stroke) ctx.stroke();
         }
 
-        // アイコン・画像描画用ヘルパー（CORSエラー安全対策版）
+        // アイコン・画像描画用ヘルパー
         function drawImageToCanvas(ctx, src, x, y, w, h, radius) {
             return new Promise((resolve) => {
                 const img = new Image();
@@ -543,10 +549,7 @@
                     ctx.restore();
                     resolve();
                 };
-                img.onerror = () => {
-                    // 読み込みに失敗しても処理を止めずに続行する
-                    resolve();
-                };
+                img.onerror = () => { resolve(); };
                 img.src = src;
             });
         }
