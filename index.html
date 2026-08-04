@@ -159,7 +159,28 @@
     </div>
 
     <script>
-        let chars = JSON.parse(localStorage.getItem('vkk_chars') || '{}');
+        // キャラ登録の処理ここから
+        // ループを使って各フォルダの画像を自動生成する設定（必要に応じてキャラを追加・変更してな）
+        let initialChars = {};
+
+        // 1人目：保栖（例：58枚）
+        let hosumiImages = [];
+        for(let i = 1; i <= 58; i++) {
+            hosumiImages.push(`https://raw.githubusercontent.com/hei/hosumi/main/hosumi/hosumi1-${i}.png`);
+        }
+        initialChars["保栖"] = hosumiImages;
+
+        // 2人目以降を追加する場合はここに同様に記述していく
+        // 例：
+        // let 別のキャラImages = [];
+        // for(let i = 1; i <= 枚数; i++) {
+        //     別のキャラImages.push(`https://raw.githubusercontent.com/.../フォルダ名/ファイル名-${i}.png`);
+        // }
+        // initialChars["キャラクター名"] = 別のキャラImages;
+
+        let chars = JSON.parse(localStorage.getItem('vkk_chars') || JSON.stringify(initialChars));
+        // キャラ登録の処理ここまで
+
         let settings = JSON.parse(localStorage.getItem('vkk_settings') || '{"title":"陰府怪奇譚","icon":"https://www.rabbithutch.site/usagoya/picture.php?user=chibichans&file=IMG_2148.webp"}');
         let currentName = ''; 
         let currentImg = '';
