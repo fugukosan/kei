@@ -159,15 +159,7 @@
     </div>
 
     <script>
-        // 保栖（58枚）の自動生成設定
-        let initialChars = {};
-        let hosumiImages = [];
-        for(let i = 1; i <= 58; i++) {
-            hosumiImages.push(`https://raw.githubusercontent.com/kei/hosumi/main/hosumi1-${i}.png`);
-        }
-        initialChars["保栖"] = hosumiImages;
-
-        let chars = JSON.parse(localStorage.getItem('vkk_chars') || JSON.stringify(initialChars));
+        let chars = JSON.parse(localStorage.getItem('vkk_chars') || '{}');
         let settings = JSON.parse(localStorage.getItem('vkk_settings') || '{"title":"陰府怪奇譚","icon":"https://www.rabbithutch.site/usagoya/picture.php?user=chibichans&file=IMG_2148.webp"}');
         let currentName = ''; 
         let currentImg = '';
