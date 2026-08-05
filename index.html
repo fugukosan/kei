@@ -379,7 +379,7 @@
             } 
         }
 
-        // --- Canvasを使ったスクショ表示・保存機能（プレビュー長押し保存方式） ---
+        // --- Canvasを使ったスクショ表示・保存機能（タグ除去対応版） ---
         async function saveCurrentPageAsImage() {
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             const startIndex = (currentPage - 1) * itemsPerPage;
@@ -398,7 +398,9 @@
             
             targetLogs.forEach(d => {
                 const maxWidth = width - 150; 
-                const lines = wrapText(ctx, d.b, maxWidth);
+                // HTMLタグを除去したテキストで高さを計算
+                const cleanTextContent = d.b.replace(/<\/?[a-z][^>]*>/gi, '');
+                const lines = wrapText(ctx, cleanTextContent, maxWidth);
                 let h = 24 + (lines.length * 24) + 30; 
                 if(d.img) h += 220; 
                 if(h < 110) h = 110; 
