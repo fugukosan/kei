@@ -379,7 +379,86 @@
             } 
         }
 
-        // --- Canvasを使ったスクショ表示・保存機能（タグ除去対応版） ---
+        // --- タグを綺麗にパースしてCanvasに描画する関数 ---
+        function parseHtmlToSegments(text) {
+            // ルビを「親文字(ルビ)」の形に変換する
+            let processed = text.replace(/<ruby>(.*?)<rt>(.*?)<\/rt><\/ruby>/g, '$1($2)');
+            
+            // タグごとに分割・解析するための簡易パーサ
+            let segments = [];
+            let regex = /<\/?([a-z]+)>/gi;
+            let lastIdx = 0;
+            let match;
+            
+            let currentTags = { large: false, small: false, b: false, i: false, rainbow: false };
+
+            while ((match = regex.exec(processed)) !== null) {
+                if (match.index > lastIdx) {
+                    segments.push({
+                        text: processed.substring(lastIdx, match.index),
+                        tags: { ...currentTags }
+                    });
+                }
+                let tagName = match[1].toLowerCase();
+                let isClosing = match[0].startsWith('</');
+                if (currentTags.hasOwnProperty(tagName)) {
+                    currentTags[tagName] = !isClosing;
+                }
+                lastIdx = regex.lastIndex;
+            }
+            if (lastIdx < processed.length) {
+                segments.push({
+                    text: processed.substring(lastIdx),
+                    tags: { ...currentTags }
+                });
+            }
+            return segments;
+        }
+
+        function wrapTextSegments(ctx, segments, maxWidth) {
+            let lines = [];
+            let currentLine = [];
+            let currentLineWidth = 0;
+
+            segments.forEach(seg => {
+                let paragraphs = seg.text.split('\n');
+                paragraphs.forEach((para, pIdx) => {
+                    if (pIdx > 0) {
+                        lines.push(currentLine);
+                        currentLine = [];
+                        currentLineWidth = 0;
+                    }
+                    for (let i = 0; i < para.length; i++) {
+                        let char = para[i];
+                        ctx.font = getFontString(seg.tags);
+                        let charWidth = ctx.measureText(char).width;
+
+                        if (currentLineWidth + charWidth > maxWidth && currentLine.length > 0) {
+                            lines.push(currentLine);
+                            currentLine = [];
+                            currentLineWidth = 0;
+                        }
+                        currentLine.push({ char: char, tags: seg.tags });
+                        currentLineWidth += charWidth;
+                    }
+                });
+            });
+            if (currentLine.length > 0) {
+                lines.push(currentLine);
+            }
+            return lines;
+        }
+
+        function getFontString(tags) {
+            let fontStyle = '';
+            let fontWeight = tags.b ? 'bold ' : '';
+            let fontSize = '16px';
+            if (tags.large) fontSize = '20px';
+            if (tags.small) fontSize = '13px';
+            return `${fontWeight}${fontSize} sans-serif`;
+        }
+
+        // --- Canvasを使ったスクショ表示・保存機能 ---
         async function saveCurrentPageAsImage() {
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
             const startIndex = (currentPage - 1) * itemsPerPage;
@@ -394,13 +473,11 @@
             let padding = 20;
             let itemHeights = [];
             
-            ctx.font = '16px sans-serif';
-            
             targetLogs.forEach(d => {
                 const maxWidth = width - 150; 
-                // HTMLタグを除去したテキストで高さを計算
-                const cleanTextContent = d.b.replace(/<\/?[a-z][^>]*>/gi, '');
-                const lines = wrapText(ctx, cleanTextContent, maxWidth);
+                const segments = parseHtmlToSegments(d.b);
+                const lines = wrapTextSegments(ctx, segments, maxWidth);
+                
                 let h = 24 + (lines.length * 24) + 30; 
                 if(d.img) h += 220; 
                 if(h < 110) h = 110; 
@@ -446,13 +523,31 @@
                 ctx.lineTo(width - 40, currentY + 42);
                 ctx.stroke();
 
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '16px sans-serif';
                 let textY = currentY + 68;
-                for(let line of item.lines) {
-                    ctx.fillText(line, 128, textY);
+                item.lines.forEach(lineItems => {
+                    let currentX = 128;
+                    lineItems.forEach(itemObj => {
+                        ctx.font = getFontString(itemObj.tags);
+                        
+                        // レインボーカラーの簡易再現（グラデーション）
+                        if (itemObj.tags.rainbow) {
+                            let grad = ctx.createLinearGradient(currentX, textY - 14, currentX + 100, textY);
+                            grad.addColorStop(0, '#ff7f7f');
+                            grad.addColorStop(0.2, '#ffbf7f');
+                            grad.addColorStop(0.4, '#ffff7f');
+                            grad.addColorStop(0.6, '#7fff7f');
+                            grad.addColorStop(0.8, '#7f7fff');
+                            grad.addColorStop(1, '#ff7fff');
+                            ctx.fillStyle = grad;
+                        } else {
+                            ctx.fillStyle = itemObj.tags.small ? '#cccccc' : '#ffffff';
+                        }
+
+                        ctx.fillText(itemObj.char, currentX, textY);
+                        currentX += ctx.measureText(itemObj.char).width;
+                    });
                     textY += 24;
-                }
+                });
 
                 if(d.img) {
                     try {
@@ -488,27 +583,6 @@
             } catch(err) {
                 alert('画像生成に失敗したわ……。');
             }
-        }
-
-        // テキスト折り返し用ヘルパー
-        function wrapText(ctx, text, maxWidth) {
-            let lines = [];
-            let paragraphs = text.split('\n');
-            paragraphs.forEach(para => {
-                let line = '';
-                for(let i = 0; i < para.length; i++) {
-                    let testLine = line + para[i];
-                    let metrics = ctx.measureText(testLine);
-                    if(metrics.width > maxWidth && i > 0) {
-                        lines.push(line);
-                        line = para[i];
-                    } else {
-                        line = testLine;
-                    }
-                }
-                lines.push(line);
-            });
-            return lines;
         }
 
         // 角丸矩形描画ヘルパー
