@@ -38,7 +38,7 @@
         .tab-item { background: #444; border: none; color: white; padding: 6px 12px; border-radius: 4px; white-space: nowrap; }
         .tab-item.on { background: #7f7fff; }
         
-        .time-setting-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: #aaa; }
+        .time-setting-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; color: #aaa; flex-wrap: wrap; }
         .time-setting-row input { background: #333; color: white; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 80px; }
 
         textarea { width: 100%; height: 70px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; padding: 8px; box-sizing: border-box; font-size: 16px; }
@@ -168,7 +168,7 @@
         let settings = JSON.parse(localStorage.getItem('vkk_settings') || '{"title":"陰府怪奇譚","icon":"https://www.rabbithutch.site/usagoya/picture.php?user=chibichans&file=IMG_2148.webp"}');
         let currentName = ''; 
         let currentImg = '';
-        let attachedImageUrl = ''; // 添付された画像のデータ保持用
+        let attachedImageUrl = ''; 
         
         let currentPage = 1;
         const itemsPerPage = 10;
@@ -218,7 +218,6 @@
             if(show) buildIconGrid();
         }
 
-        // ローカル画像ファイルをBase64に変換してインプットに追加する処理
         function attachLocalImage(input) {
             const file = input.files[0];
             if (!file) return;
@@ -311,9 +310,8 @@
             const todayStr = new Date().toISOString().split('T')[0];
 
             let textContent = val;
-            let imageUrl = attachedImageUrl; // 添付された画像があればそれを優先
+            let imageUrl = attachedImageUrl; 
 
-            // 添付されておらず、テキスト内にURLが含まれている場合は従来通り抽出
             if (!imageUrl && val) {
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 const matches = val.match(urlRegex);
@@ -346,7 +344,7 @@
             
             document.getElementById('text-in').value = '';
             document.getElementById('custom-time').value = '';
-            attachedImageUrl = ''; // 添付画像をクリア
+            attachedImageUrl = ''; 
             window.scrollTo(0, 0);
         }
 
@@ -496,6 +494,17 @@
             return `${fontWeight}${fontSize} sans-serif`;
         }
 
+        // --- 画像サイズを事前に非同期で取得するヘルパー ---
+        function getImageDimensions(src) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => resolve({ width: img.width, height: img.height });
+                img.onerror = () => resolve({ width: 400, height: 300 }); // エラー時は仮の比率
+                img.src = src;
+            });
+        }
+
         // --- Canvasを使ったスクショ表示・保存機能 ---
         async function saveCurrentPageAsImage() {
             let logs = JSON.parse(localStorage.getItem('vkk_logs') || '[]');
@@ -511,17 +520,28 @@
             let padding = 20;
             let itemHeights = [];
             
-            targetLogs.forEach(d => {
+            for(let d of targetLogs) {
                 const maxWidth = width - 150; 
                 const segments = parseHtmlToSegments(d.b);
                 const lines = wrapTextSegments(ctx, segments, maxWidth);
                 
                 let h = 24 + (lines.length * 24) + 30; 
-                if(d.img) h += 220; 
+                let imgRenderH = 0;
+                
+                if(d.img) {
+                    const dim = await getImageDimensions(d.img);
+                    // 最大幅に対する縦横比高さを計算（最大高さ制限つき）
+                    const maxImgW = width - 168;
+                    const maxImgH = 300;
+                    let ratio = Math.min(maxImgW / dim.width, maxImgH / dim.height);
+                    imgRenderH = dim.height * ratio;
+                    h += imgRenderH + 15;
+                }
+                
                 if(h < 110) h = 110; 
-                itemHeights.push({ h: h, lines: lines, data: d });
+                itemHeights.push({ h: h, lines: lines, data: d, imgH: imgRenderH });
                 padding += h + 12; 
-            });
+            }
 
             canvas.height = padding + 20;
 
@@ -588,7 +608,7 @@
 
                 if(d.img) {
                     try {
-                        await drawImageToCanvas(ctx, d.img, 128, textY + 5, width - 168, 200, 6);
+                        await drawImageToCanvasAspect(ctx, d.img, 128, textY + 5, width - 168, 300, 6);
                     } catch(e) {
                         ctx.fillStyle = '#444';
                         ctx.fillRect(128, textY + 5, width - 168, 200);
@@ -638,6 +658,7 @@
             if (stroke) ctx.stroke();
         }
 
+        // アイコン用（正方形に切り抜き）
         function drawImageToCanvas(ctx, src, x, y, w, h, radius) {
             return new Promise((resolve) => {
                 const img = new Image();
@@ -657,6 +678,42 @@
                     ctx.closePath();
                     ctx.clip();
                     ctx.drawImage(img, x, y, w, h);
+                    ctx.restore();
+                    resolve();
+                };
+                img.onerror = () => { resolve(); };
+                img.src = src;
+            });
+        }
+
+        // 投稿画像用（縦横比を維持して綺麗に収める）
+        function drawImageToCanvasAspect(ctx, src, x, y, maxWidth, maxHeight, radius) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => {
+                    let w = img.width;
+                    let h = img.height;
+                    let ratio = Math.min(maxWidth / w, maxHeight / h);
+                    let drawW = w * ratio;
+                    let drawH = h * ratio;
+                    let drawX = x + (maxWidth - drawW) / 2;
+                    let drawY = y;
+
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(x + radius, drawY);
+                    ctx.lineTo(x + maxWidth - radius, drawY);
+                    ctx.quadraticCurveTo(x + maxWidth, drawY, x + maxWidth, drawY + radius);
+                    ctx.lineTo(x + maxWidth, drawY + drawH - radius);
+                    ctx.quadraticCurveTo(x + maxWidth, drawY + drawH, x + maxWidth - radius, drawY + drawH);
+                    ctx.lineTo(x + radius, drawY + drawH);
+                    ctx.quadraticCurveTo(x, drawY + drawH, x, drawY + drawH - radius);
+                    ctx.lineTo(x, drawY + radius);
+                    ctx.quadraticCurveTo(x, drawY, x + radius, drawY);
+                    ctx.closePath();
+                    ctx.clip();
+                    ctx.drawImage(img, drawX, drawY, drawW, drawH);
                     ctx.restore();
                     resolve();
                 };
