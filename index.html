@@ -500,7 +500,7 @@
                 const img = new Image();
                 img.crossOrigin = 'anonymous';
                 img.onload = () => resolve({ width: img.width, height: img.height });
-                img.onerror = () => resolve({ width: 400, height: 300 }); // エラー時は仮の比率
+                img.onerror = () => resolve({ width: 400, height: 300 });
                 img.src = src;
             });
         }
@@ -530,7 +530,6 @@
                 
                 if(d.img) {
                     const dim = await getImageDimensions(d.img);
-                    // 最大幅に対する縦横比高さを計算（最大高さ制限つき）
                     const maxImgW = width - 168;
                     const maxImgH = 300;
                     let ratio = Math.min(maxImgW / dim.width, maxImgH / dim.height);
@@ -638,7 +637,7 @@
                 document.body.appendChild(previewModal);
 
             } catch(err) {
-                alert('画像生成に失敗したわ……。');
+                alert('画像生成に失敗したわ……');
             }
         }
 
@@ -658,7 +657,6 @@
             if (stroke) ctx.stroke();
         }
 
-        // アイコン用（正方形に切り抜き）
         function drawImageToCanvas(ctx, src, x, y, w, h, radius) {
             return new Promise((resolve) => {
                 const img = new Image();
@@ -686,7 +684,6 @@
             });
         }
 
-        // 投稿画像用（縦横比を維持して綺麗に収める）
         function drawImageToCanvasAspect(ctx, src, x, y, maxWidth, maxHeight, radius) {
             return new Promise((resolve) => {
                 const img = new Image();
