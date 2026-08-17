@@ -95,9 +95,11 @@
             <span>投稿時間:</span>
             <input type="text" id="custom-time" placeholder="例: 21:48">
             <span style="font-size: 10px; color: #777;">（空欄なら現在時刻）</span>
+            <button onclick="document.getElementById('imageFileIn').click()" style="margin-left:auto; background:#444; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;">📁 画像ファイル添付</button>
+            <input type="file" id="imageFileIn" style="display:none" accept="image/*" onchange="attachLocalImage(this)">
         </div>
 
-        <textarea id="text-in" placeholder="メッセージを入力（画像URLを貼ると画像も出せるよ）"></textarea>
+        <textarea id="text-in" placeholder="メッセージを入力（画像URLを貼るか、上のボタンから画像を添付できるよ）"></textarea>
         <div class="btn-row">
             <button onclick="tag('large')">L</button>
             <button onclick="tag('small')">S</button>
@@ -139,7 +141,10 @@
 
         <h3>キャラクター新規登録・更新</h3>
         <div class="field"><label>名前</label><input type="text" id="c-name"></div>
-        <div class="field"><label>アイコンURL（改行区切り）</label><textarea id="c-urls" style="height:100px;" placeholder="https://..."></textarea></div>
+        <div class="field"><label>アイコンURL・パス（改行区切り）</label><textarea id="c-urls" style="height:100px;" placeholder="https://... または相対パス"></textarea>
+            <button onclick="document.getElementById('cIconFileIn').click()" style="margin-top:5px; background:#444; color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;">📁 画像ファイルから追加</button>
+            <input type="file" id="cIconFileIn" style="display:none" accept="image/*" multiple onchange="addLocalIcons(this)">
+        </div>
         <button onclick="saveChar()" style="width:100%; padding:12px; background:#7f7fff; color:white; border:none; border-radius:4px; font-weight:bold;">登録・更新</button>
         
         <h3 style="margin-top: 25px;">登録済みキャラ一覧</h3>
@@ -163,6 +168,7 @@
         let settings = JSON.parse(localStorage.getItem('vkk_settings') || '{"title":"陰府怪奇譚","icon":"https://www.rabbithutch.site/usagoya/picture.php?user=chibichans&file=IMG_2148.webp"}');
         let currentName = ''; 
         let currentImg = '';
+        let attachedImageUrl = ''; // 添付された画像のデータ保持用
         
         let currentPage = 1;
         const itemsPerPage = 10;
@@ -210,6 +216,39 @@
             document.getElementById('mask').style.display = show ? 'block' : 'none';
             document.getElementById('modal').style.display = show ? 'block' : 'none';
             if(show) buildIconGrid();
+        }
+
+        // ローカル画像ファイルをBase64に変換してインプットに追加する処理
+        function attachLocalImage(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                attachedImageUrl = e.target.result;
+                alert('画像を添付したで！そのまま投稿してな');
+                input.value = '';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function addLocalIcons(input) {
+            const files = input.files;
+            if (!files.length) return;
+            const urlsTextarea = document.getElementById('c-urls');
+            let loadedCount = 0;
+            
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    urlsTextarea.value += (urlsTextarea.value ? '\n' : '') + e.target.result;
+                    loadedCount++;
+                    if(loadedCount === files.length) {
+                        alert('アイコン画像を読み込んだで！「登録・更新」を押してな');
+                    }
+                };
+                reader.readAsDataURL(file);
+            });
+            input.value = '';
         }
 
         function saveChar() {
@@ -261,7 +300,7 @@
 
         function post() {
             const val = document.getElementById('text-in').value.trim();
-            if(!val || !currentName) return;
+            if((!val && !attachedImageUrl) || !currentName) return;
 
             let timeStr = document.getElementById('custom-time').value.trim();
             if(!timeStr) {
@@ -272,16 +311,18 @@
             const todayStr = new Date().toISOString().split('T')[0];
 
             let textContent = val;
-            let imageUrl = '';
+            let imageUrl = attachedImageUrl; // 添付された画像があればそれを優先
 
-            const urlRegex = /(https?:\/\/[^\s]+)/g;
-            const matches = val.match(urlRegex);
-            
-            if (matches) {
-                const imgMatch = matches.find(url => /\.(jpg|jpeg|png|webp|gif)(?:[?#]|$)/i.test(url) || url.includes('picture.php'));
-                if (imgMatch) {
-                    imageUrl = imgMatch;
-                    textContent = val.replace(imgMatch, '').trim();
+            // 添付されておらず、テキスト内にURLが含まれている場合は従来通り抽出
+            if (!imageUrl && val) {
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                const matches = val.match(urlRegex);
+                if (matches) {
+                    const imgMatch = matches.find(url => /\.(jpg|jpeg|png|webp|gif)(?:[?#]|$)/i.test(url) || url.includes('picture.php'));
+                    if (imgMatch) {
+                        imageUrl = imgMatch;
+                        textContent = val.replace(imgMatch, '').trim();
+                    }
                 }
             }
 
@@ -305,6 +346,7 @@
             
             document.getElementById('text-in').value = '';
             document.getElementById('custom-time').value = '';
+            attachedImageUrl = ''; // 添付画像をクリア
             window.scrollTo(0, 0);
         }
 
@@ -381,10 +423,7 @@
 
         // --- タグを綺麗にパースしてCanvasに描画する関数 ---
         function parseHtmlToSegments(text) {
-            // ルビを「親文字(ルビ)」の形に変換する
             let processed = text.replace(/<ruby>(.*?)<rt>(.*?)<\/rt><\/ruby>/g, '$1($2)');
-            
-            // タグごとに分割・解析するための簡易パーサ
             let segments = [];
             let regex = /<\/?([a-z]+)>/gi;
             let lastIdx = 0;
@@ -450,7 +489,6 @@
         }
 
         function getFontString(tags) {
-            let fontStyle = '';
             let fontWeight = tags.b ? 'bold ' : '';
             let fontSize = '16px';
             if (tags.large) fontSize = '20px';
@@ -529,7 +567,6 @@
                     lineItems.forEach(itemObj => {
                         ctx.font = getFontString(itemObj.tags);
                         
-                        // レインボーカラーの簡易再現（グラデーション）
                         if (itemObj.tags.rainbow) {
                             let grad = ctx.createLinearGradient(currentX, textY - 14, currentX + 100, textY);
                             grad.addColorStop(0, '#ff7f7f');
@@ -585,7 +622,6 @@
             }
         }
 
-        // 角丸矩形描画ヘルパー
         function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
             ctx.beginPath();
             ctx.moveTo(x + radius, y);
@@ -602,7 +638,6 @@
             if (stroke) ctx.stroke();
         }
 
-        // アイコン・画像描画用ヘルパー
         function drawImageToCanvas(ctx, src, x, y, w, h, radius) {
             return new Promise((resolve) => {
                 const img = new Image();
@@ -629,7 +664,6 @@
                 img.src = src;
             });
         }
-        // --- ここまで ---
 
         function buildManageList() {
             const area = document.getElementById('char-list-ui'); if(!area) return;
