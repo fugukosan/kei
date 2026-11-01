@@ -164,7 +164,7 @@
     </div>
 
     <script>
-        let chars = JSON.parse(localStorage.getItem('vkk_chars') || '{}');
+                let chars = JSON.parse(localStorage.getItem('vkk_chars') || '{}');
         let settings = JSON.parse(localStorage.getItem('vkk_settings') || '{"title":"陰府怪奇譚","icon":"https://www.rabbithutch.site/usagoya/picture.php?user=chibichans&file=IMG_2148.webp"}');
         let currentName = ''; 
         let currentImg = '';
@@ -421,77 +421,123 @@
 
         // --- タグを綺麗にパースしてCanvasに描画する関数 ---
         function parseHtmlToSegments(text) {
-            let processed = text.replace(/<ruby>(.*?)<rt>(.*?)<\/rt><\/ruby>/g, '$1($2)');
-            let segments = [];
-            let regex = /<\/?([a-z]+)>/gi;
+            const segments = [];
+            const currentTags = {
+                large: false,
+                small: false,
+                b: false,
+                i: false,
+                rainbow: false
+            };
+
+            const regex = /<ruby>([\s\S]*?)<rt>([\s\S]*?)<\/rt><\/ruby>|<\/?(large|small|b|i|rainbow)>/gi;
             let lastIdx = 0;
             let match;
-            
-            let currentTags = { large: false, small: false, b: false, i: false, rainbow: false };
 
-            while ((match = regex.exec(processed)) !== null) {
+            while ((match = regex.exec(text)) !== null) {
                 if (match.index > lastIdx) {
                     segments.push({
-                        text: processed.substring(lastIdx, match.index),
+                        text: text.substring(lastIdx, match.index),
                         tags: { ...currentTags }
                     });
                 }
-                let tagName = match[1].toLowerCase();
-                let isClosing = match[0].startsWith('</');
-                if (currentTags.hasOwnProperty(tagName)) {
+
+                if (match[1] !== undefined) {
+                    segments.push({
+                        ruby: {
+                            base: match[1],
+                            reading: match[2]
+                        },
+                        tags: { ...currentTags }
+                    });
+                } else {
+                    const tagName = match[3].toLowerCase();
+                    const isClosing = match[0].startsWith('</');
                     currentTags[tagName] = !isClosing;
                 }
+
                 lastIdx = regex.lastIndex;
             }
-            if (lastIdx < processed.length) {
+
+            if (lastIdx < text.length) {
                 segments.push({
-                    text: processed.substring(lastIdx),
+                    text: text.substring(lastIdx),
                     tags: { ...currentTags }
                 });
             }
+
             return segments;
         }
 
+        function getFontString(tags) {
+            const fontWeight = tags.b ? 'bold ' : '';
+            let fontSize = '16px';
+
+            if (tags.large) fontSize = '20px';
+            if (tags.small) fontSize = '13px';
+
+            return `${fontWeight}${fontSize} sans-serif`;
+        }
+
         function wrapTextSegments(ctx, segments, maxWidth) {
-            let lines = [];
+            const lines = [];
             let currentLine = [];
             let currentLineWidth = 0;
 
-            segments.forEach(seg => {
-                let paragraphs = seg.text.split('\n');
-                paragraphs.forEach((para, pIdx) => {
-                    if (pIdx > 0) {
-                        lines.push(currentLine);
-                        currentLine = [];
-                        currentLineWidth = 0;
-                    }
-                    for (let i = 0; i < para.length; i++) {
-                        let char = para[i];
-                        ctx.font = getFontString(seg.tags);
-                        let charWidth = ctx.measureText(char).width;
+            function finishLine() {
+                lines.push(currentLine);
+                currentLine = [];
+                currentLineWidth = 0;
+            }
 
-                        if (currentLineWidth + charWidth > maxWidth && currentLine.length > 0) {
-                            lines.push(currentLine);
-                            currentLine = [];
-                            currentLineWidth = 0;
-                        }
-                        currentLine.push({ char: char, tags: seg.tags });
-                        currentLineWidth += charWidth;
+            function addToken(token) {
+                if (currentLineWidth + token.width > maxWidth && currentLine.length > 0) {
+                    finishLine();
+                }
+
+                currentLine.push(token);
+                currentLineWidth += token.width;
+            }
+
+            segments.forEach(seg => {
+                if (seg.ruby) {
+                    ctx.font = getFontString(seg.tags);
+                    const baseWidth = ctx.measureText(seg.ruby.base).width;
+
+                    ctx.font = '9px sans-serif';
+                    const readingWidth = ctx.measureText(seg.ruby.reading).width;
+
+                    addToken({
+                        ruby: seg.ruby,
+                        tags: seg.tags,
+                        width: Math.max(baseWidth, readingWidth)
+                    });
+                    return;
+                }
+
+                const paragraphs = seg.text.split('\n');
+
+                paragraphs.forEach((paragraph, pIdx) => {
+                    if (pIdx > 0) finishLine();
+
+                    for (const char of paragraph) {
+                        ctx.font = getFontString(seg.tags);
+                        const charWidth = ctx.measureText(char).width;
+
+                        addToken({
+                            char,
+                            tags: seg.tags,
+                            width: charWidth
+                        });
                     }
                 });
             });
-            if (currentLine.length > 0) {
+
+            if (currentLine.length > 0 || lines.length === 0) {
                 lines.push(currentLine);
             }
-            return lines;
-        }
 
-        function getFontString(tags) {
-            let fontWeight = tags.b ? 'bold ' : '';
-            let fontSize = '16px';
-            if (tags.large) fontSize = '20px';
-            if (tags.small) fontSize = '13px';
-            return `${fontWeight}${fontSize} sans-serif`;
+            return lines;
         }
 
         // --- 画像サイズを事前に非同期で取得するヘルパー ---
@@ -525,7 +571,8 @@
                 const segments = parseHtmlToSegments(d.b);
                 const lines = wrapTextSegments(ctx, segments, maxWidth);
                 
-                let h = 24 + (lines.length * 24) + 30; 
+                // ルビがある場合は高さを少し余裕を持たせる
+                let h = 24 + (lines.length * 30) + 30; 
                 let imgRenderH = 0;
                 
                 if(d.img) {
@@ -580,29 +627,111 @@
                 ctx.lineTo(width - 40, currentY + 42);
                 ctx.stroke();
 
-                let textY = currentY + 68;
+                let textY = currentY + 74;
+
                 item.lines.forEach(lineItems => {
                     let currentX = 128;
+
+                    // 先に行内の各トークンの幅を確定
                     lineItems.forEach(itemObj => {
-                        ctx.font = getFontString(itemObj.tags);
-                        
-                        if (itemObj.tags.rainbow) {
-                            let grad = ctx.createLinearGradient(currentX, textY - 14, currentX + 100, textY);
-                            grad.addColorStop(0, '#ff7f7f');
-                            grad.addColorStop(0.2, '#ffbf7f');
-                            grad.addColorStop(0.4, '#ffff7f');
-                            grad.addColorStop(0.6, '#7fff7f');
-                            grad.addColorStop(0.8, '#7f7fff');
-                            grad.addColorStop(1, '#ff7fff');
-                            ctx.fillStyle = grad;
+                        if (itemObj.ruby) {
+                            ctx.font = getFontString(itemObj.tags);
+                            const baseWidth = ctx.measureText(itemObj.ruby.base).width;
+
+                            ctx.font = '9px sans-serif';
+                            const readingWidth = ctx.measureText(itemObj.ruby.reading).width;
+
+                            itemObj.baseWidth = baseWidth;
+                            itemObj.readingWidth = readingWidth;
+                            itemObj.width = Math.max(baseWidth, readingWidth);
                         } else {
-                            ctx.fillStyle = itemObj.tags.small ? '#cccccc' : '#ffffff';
+                            ctx.font = getFontString(itemObj.tags);
+                            itemObj.width = ctx.measureText(itemObj.char).width;
+                        }
+                    });
+
+                    // 虹文字の連続部分ごとに、文字列全体へグラデーションをかける
+                    let i = 0;
+                    while (i < lineItems.length) {
+                        const itemObj = lineItems[i];
+
+                        if (!itemObj.tags.rainbow) {
+                            i++;
+                            continue;
                         }
 
-                        ctx.fillText(itemObj.char, currentX, textY);
-                        currentX += ctx.measureText(itemObj.char).width;
+                        let runEnd = i;
+                        let runWidth = 0;
+
+                        while (runEnd < lineItems.length && lineItems[runEnd].tags.rainbow) {
+                            runWidth += lineItems[runEnd].width;
+                            runEnd++;
+                        }
+
+                        const grad = ctx.createLinearGradient(
+                            currentX,
+                            textY - 16,
+                            currentX + Math.max(runWidth, 1),
+                            textY
+                        );
+
+                        grad.addColorStop(0, '#ff7f7f');
+                        grad.addColorStop(0.2, '#ffbf7f');
+                        grad.addColorStop(0.4, '#ffff7f');
+                        grad.addColorStop(0.6, '#7fff7f');
+                        grad.addColorStop(0.8, '#7f7fff');
+                        grad.addColorStop(1, '#ff7fff');
+
+                        for (let j = i; j < runEnd; j++) {
+                            lineItems[j].rainbowGradient = grad;
+                        }
+
+                        i = runEnd;
+                    }
+
+                    // 描画
+                    lineItems.forEach(itemObj => {
+                        const tokenX = currentX;
+
+                        if (itemObj.ruby) {
+                            const base = itemObj.ruby.base;
+                            const reading = itemObj.ruby.reading;
+
+                            ctx.font = getFontString(itemObj.tags);
+                            ctx.fillStyle = itemObj.tags.rainbow
+                                ? itemObj.rainbowGradient
+                                : (itemObj.tags.small ? '#cccccc' : '#ffffff');
+
+                            ctx.textAlign = 'center';
+                            ctx.fillText(
+                                base,
+                                tokenX + itemObj.width / 2,
+                                textY
+                            );
+
+                            ctx.font = '9px sans-serif';
+                            ctx.fillStyle = '#ffffff';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(
+                                reading,
+                                tokenX + itemObj.width / 2,
+                                textY - 13
+                            );
+
+                            ctx.textAlign = 'left';
+                        } else {
+                            ctx.font = getFontString(itemObj.tags);
+                            ctx.fillStyle = itemObj.tags.rainbow
+                                ? itemObj.rainbowGradient
+                                : (itemObj.tags.small ? '#cccccc' : '#ffffff');
+
+                            ctx.fillText(itemObj.char, tokenX, textY);
+                        }
+
+                        currentX += itemObj.width;
                     });
-                    textY += 24;
+
+                    textY += 30;
                 });
 
                 if(d.img) {
@@ -839,6 +968,7 @@
             el.value = txt.substring(0, start) + `<ruby>` + txt.substring(start, end) + `<rt>ルビ</rt></ruby>` + txt.substring(end);
             el.focus();
         }
+
     </script>
 
 </body>
