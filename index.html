@@ -26,7 +26,9 @@
         .pagination-bar select { background: #333; color: white; border: 1px solid #555; border-radius: 4px; padding: 4px 6px; font-size: 12px; }
 
         large { font-size: 1.3em; font-weight: bold; }
+        large large { font-size: 1.2em; }
         small { font-size: 0.8em; color: #ccc; }
+        small small { font-size: 0.8em; }
         b { font-weight: bold; }
         i { font-style: italic; }
         rainbow { background: linear-gradient(to right, #ff7f7f, #ffbf7f, #ffff7f, #7fff7f, #7f7fff, #bf7fff, #ff7fff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block; }
@@ -164,7 +166,7 @@
     </div>
 
     <script>
-                let chars = JSON.parse(localStorage.getItem('vkk_chars') || '{}');
+        let chars = JSON.parse(localStorage.getItem('vkk_chars') || '{}');
         let settings = JSON.parse(localStorage.getItem('vkk_settings') || '{"title":"陰府怪奇譚","icon":"https://www.rabbithutch.site/usagoya/picture.php?user=chibichans&file=IMG_2148.webp"}');
         let currentName = ''; 
         let currentImg = '';
@@ -419,15 +421,15 @@
             } 
         }
 
-        // --- タグを綺麗にパースしてCanvasに描画する関数 ---
+        // --- タグを綺麗にパースしてCanvasに描画する関数（ネスト・斜体対応版） ---
         function parseHtmlToSegments(text) {
             const segments = [];
             const currentTags = {
-                large: false,
-                small: false,
-                b: false,
-                i: false,
-                rainbow: false
+                large: 0,
+                small: 0,
+                b: 0,
+                i: 0,
+                rainbow: 0
             };
 
             const regex = /<ruby>([\s\S]*?)<rt>([\s\S]*?)<\/rt><\/ruby>|<\/?(large|small|b|i|rainbow)>/gi;
@@ -438,7 +440,13 @@
                 if (match.index > lastIdx) {
                     segments.push({
                         text: text.substring(lastIdx, match.index),
-                        tags: { ...currentTags }
+                        tags: { 
+                            large: currentTags.large,
+                            small: currentTags.small,
+                            b: currentTags.b,
+                            i: currentTags.i,
+                            rainbow: currentTags.rainbow
+                        }
                     });
                 }
 
@@ -448,12 +456,22 @@
                             base: match[1],
                             reading: match[2]
                         },
-                        tags: { ...currentTags }
+                        tags: { 
+                            large: currentTags.large,
+                            small: currentTags.small,
+                            b: currentTags.b,
+                            i: currentTags.i,
+                            rainbow: currentTags.rainbow
+                        }
                     });
                 } else {
                     const tagName = match[3].toLowerCase();
                     const isClosing = match[0].startsWith('</');
-                    currentTags[tagName] = !isClosing;
+                    if (isClosing) {
+                        if (currentTags[tagName] > 0) currentTags[tagName]--;
+                    } else {
+                        currentTags[tagName]++;
+                    }
                 }
 
                 lastIdx = regex.lastIndex;
@@ -462,21 +480,34 @@
             if (lastIdx < text.length) {
                 segments.push({
                     text: text.substring(lastIdx),
-                    tags: { ...currentTags }
+                    tags: { 
+                        large: currentTags.large,
+                        small: currentTags.small,
+                        b: currentTags.b,
+                        i: currentTags.i,
+                        rainbow: currentTags.rainbow
+                    }
                 });
             }
 
             return segments;
         }
 
+        function getFontSize(tags) {
+            let size = 16;
+            if (tags.large > 0) {
+                size = 16 + (tags.large * 5);
+            } else if (tags.small > 0) {
+                size = Math.max(10, 16 - (tags.small * 3));
+            }
+            return size;
+        }
+
         function getFontString(tags) {
-            const fontWeight = tags.b ? 'bold ' : '';
-            let fontSize = '16px';
-
-            if (tags.large) fontSize = '20px';
-            if (tags.small) fontSize = '13px';
-
-            return `${fontWeight}${fontSize} sans-serif`;
+            const fontStyle = (tags.i > 0) ? 'italic ' : '';
+            const fontWeight = (tags.b > 0) ? 'bold ' : '';
+            const fontSize = getFontSize(tags);
+            return `${fontStyle}${fontWeight}${fontSize}px sans-serif`;
         }
 
         function wrapTextSegments(ctx, segments, maxWidth) {
@@ -504,7 +535,7 @@
                     ctx.font = getFontString(seg.tags);
                     const baseWidth = ctx.measureText(seg.ruby.base).width;
 
-                    ctx.font = '9px sans-serif';
+                    ctx.font = '10px sans-serif';
                     const readingWidth = ctx.measureText(seg.ruby.reading).width;
 
                     addToken({
@@ -571,8 +602,28 @@
                 const segments = parseHtmlToSegments(d.b);
                 const lines = wrapTextSegments(ctx, segments, maxWidth);
                 
-                // ルビがある場合は高さを少し余裕を持たせる
-                let h = 24 + (lines.length * 30) + 30; 
+                let h = 24;
+                let dummyTextY = 0;
+                
+                // 行ごとの高さを前もって厳密に計算してカードの高さを決める
+                lines.forEach(lineItems => {
+                    let maxFontSizeInLine = 16;
+                    let hasRubyInLine = false;
+                    lineItems.forEach(itemObj => {
+                        let fs = getFontSize(itemObj.tags);
+                        if (fs > maxFontSizeInLine) maxFontSizeInLine = fs;
+                        if (itemObj.ruby) hasRubyInLine = true;
+                    });
+                    let rubyOffset = hasRubyInLine ? Math.max(14, maxFontSizeInLine * 0.75) : 0;
+                    if (hasRubyInLine && dummyTextY === 0) {
+                        h += rubyOffset;
+                    }
+                    let lineSpacing = maxFontSizeInLine + rubyOffset + 8;
+                    h += lineSpacing;
+                    dummyTextY += 1;
+                });
+                
+                h += 35; 
                 let imgRenderH = 0;
                 
                 if(d.img) {
@@ -627,18 +678,24 @@
                 ctx.lineTo(width - 40, currentY + 42);
                 ctx.stroke();
 
-                let textY = currentY + 74;
+                let textY = currentY + 70;
 
                 item.lines.forEach(lineItems => {
                     let currentX = 128;
 
-                    // 先に行内の各トークンの幅を確定
+                    let maxFontSizeInLine = 16;
+                    let hasRubyInLine = false;
+
                     lineItems.forEach(itemObj => {
+                        let fs = getFontSize(itemObj.tags);
+                        if (fs > maxFontSizeInLine) maxFontSizeInLine = fs;
+
                         if (itemObj.ruby) {
+                            hasRubyInLine = true;
                             ctx.font = getFontString(itemObj.tags);
                             const baseWidth = ctx.measureText(itemObj.ruby.base).width;
 
-                            ctx.font = '9px sans-serif';
+                            ctx.font = '10px sans-serif';
                             const readingWidth = ctx.measureText(itemObj.ruby.reading).width;
 
                             itemObj.baseWidth = baseWidth;
@@ -650,12 +707,16 @@
                         }
                     });
 
-                    // 虹文字の連続部分ごとに、文字列全体へグラデーションをかける
+                    let rubyOffset = hasRubyInLine ? Math.max(14, maxFontSizeInLine * 0.75) : 0;
+                    if (hasRubyInLine && textY === currentY + 70) {
+                        textY += rubyOffset;
+                    }
+
                     let i = 0;
                     while (i < lineItems.length) {
                         const itemObj = lineItems[i];
 
-                        if (!itemObj.tags.rainbow) {
+                        if (!itemObj.tags.rainbow || itemObj.tags.rainbow === 0) {
                             i++;
                             continue;
                         }
@@ -663,14 +724,14 @@
                         let runEnd = i;
                         let runWidth = 0;
 
-                        while (runEnd < lineItems.length && lineItems[runEnd].tags.rainbow) {
+                        while (runEnd < lineItems.length && lineItems[runEnd].tags.rainbow && lineItems[runEnd].tags.rainbow > 0) {
                             runWidth += lineItems[runEnd].width;
                             runEnd++;
                         }
 
                         const grad = ctx.createLinearGradient(
                             currentX,
-                            textY - 16,
+                            textY - maxFontSizeInLine,
                             currentX + Math.max(runWidth, 1),
                             textY
                         );
@@ -689,18 +750,18 @@
                         i = runEnd;
                     }
 
-                    // 描画
                     lineItems.forEach(itemObj => {
                         const tokenX = currentX;
+                        let fs = getFontSize(itemObj.tags);
 
                         if (itemObj.ruby) {
                             const base = itemObj.ruby.base;
                             const reading = itemObj.ruby.reading;
 
                             ctx.font = getFontString(itemObj.tags);
-                            ctx.fillStyle = itemObj.tags.rainbow
+                            ctx.fillStyle = (itemObj.tags.rainbow && itemObj.tags.rainbow > 0)
                                 ? itemObj.rainbowGradient
-                                : (itemObj.tags.small ? '#cccccc' : '#ffffff');
+                                : (itemObj.tags.small > 0 ? '#cccccc' : '#ffffff');
 
                             ctx.textAlign = 'center';
                             ctx.fillText(
@@ -709,21 +770,21 @@
                                 textY
                             );
 
-                            ctx.font = '9px sans-serif';
+                            ctx.font = '10px sans-serif';
                             ctx.fillStyle = '#ffffff';
                             ctx.textAlign = 'center';
                             ctx.fillText(
                                 reading,
                                 tokenX + itemObj.width / 2,
-                                textY - 13
+                                textY - fs - 3
                             );
 
                             ctx.textAlign = 'left';
                         } else {
                             ctx.font = getFontString(itemObj.tags);
-                            ctx.fillStyle = itemObj.tags.rainbow
+                            ctx.fillStyle = (itemObj.tags.rainbow && itemObj.tags.rainbow > 0)
                                 ? itemObj.rainbowGradient
-                                : (itemObj.tags.small ? '#cccccc' : '#ffffff');
+                                : (itemObj.tags.small > 0 ? '#cccccc' : '#ffffff');
 
                             ctx.fillText(itemObj.char, tokenX, textY);
                         }
@@ -731,7 +792,8 @@
                         currentX += itemObj.width;
                     });
 
-                    textY += 30;
+                    let lineSpacing = maxFontSizeInLine + rubyOffset + 8;
+                    textY += lineSpacing;
                 });
 
                 if(d.img) {
@@ -968,7 +1030,6 @@
             el.value = txt.substring(0, start) + `<ruby>` + txt.substring(start, end) + `<rt>ルビ</rt></ruby>` + txt.substring(end);
             el.focus();
         }
-
     </script>
 
 </body>
