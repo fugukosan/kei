@@ -605,7 +605,6 @@
                 let h = 24;
                 let dummyTextY = 0;
                 
-                // 行ごとの高さを前もって厳密に計算してカードの高さを決める
                 lines.forEach(lineItems => {
                     let maxFontSizeInLine = 16;
                     let hasRubyInLine = false;
@@ -686,9 +685,13 @@
                     let maxFontSizeInLine = 16;
                     let hasRubyInLine = false;
 
+                    // 先に行内の各トークンの幅と開始X座標を確定
+                    let cursorX = 128;
                     lineItems.forEach(itemObj => {
                         let fs = getFontSize(itemObj.tags);
                         if (fs > maxFontSizeInLine) maxFontSizeInLine = fs;
+
+                        itemObj.startX = cursorX;
 
                         if (itemObj.ruby) {
                             hasRubyInLine = true;
@@ -705,6 +708,8 @@
                             ctx.font = getFontString(itemObj.tags);
                             itemObj.width = ctx.measureText(itemObj.char).width;
                         }
+
+                        cursorX += itemObj.width;
                     });
 
                     let rubyOffset = hasRubyInLine ? Math.max(14, maxFontSizeInLine * 0.75) : 0;
@@ -712,6 +717,7 @@
                         textY += rubyOffset;
                     }
 
+                    // 虹文字の連続区間ごとに正確な開始X座標と幅でグラデーションを作成
                     let i = 0;
                     while (i < lineItems.length) {
                         const itemObj = lineItems[i];
@@ -723,6 +729,7 @@
 
                         let runEnd = i;
                         let runWidth = 0;
+                        const runStartX = itemObj.startX;
 
                         while (runEnd < lineItems.length && lineItems[runEnd].tags.rainbow && lineItems[runEnd].tags.rainbow > 0) {
                             runWidth += lineItems[runEnd].width;
@@ -730,9 +737,9 @@
                         }
 
                         const grad = ctx.createLinearGradient(
-                            currentX,
-                            textY - maxFontSizeInLine,
-                            currentX + Math.max(runWidth, 1),
+                            runStartX,
+                            textY,
+                            runStartX + Math.max(runWidth, 1),
                             textY
                         );
 
@@ -751,7 +758,7 @@
                     }
 
                     lineItems.forEach(itemObj => {
-                        const tokenX = currentX;
+                        const tokenX = itemObj.startX;
                         let fs = getFontSize(itemObj.tags);
 
                         if (itemObj.ruby) {
@@ -788,8 +795,6 @@
 
                             ctx.fillText(itemObj.char, tokenX, textY);
                         }
-
-                        currentX += itemObj.width;
                     });
 
                     let lineSpacing = maxFontSizeInLine + rubyOffset + 8;
